@@ -21,28 +21,5 @@ AegisAI is a real-time AI governance layer that converts ethical principles into
 Detection (`app/plugins/`) feeds findings to both Ethics and Governance. The kernel decides. The gateway enforces. The audit chain proves.
 
 ---
-
 ## Architecture
-
-````mermaid
-flowchart LR
-    Client[Client] -->|OpenAI API| Gateway
-
-    subgraph Gateway[AegisAI Gateway - FastAPI]
-        direction LR
-        D[1. Detect]
-        K[2. Decide]
-        A[3. Audit]
-        E[4. Enforce]
-        D --> K --> A --> E
-    end
-
-    K -->|decisions| Redis[(Redis Metrics)]
-    Redis --> Grafana[Grafana Dashboard]
-
-    A -->|every decision| DB[(SQLite Hash Chain)]
-    DB --> Verify[/audit/verify]
-
-    E -->|allow / redact| LLM[LLM Provider]
-    E -->|block / escalate| Reject[403 / 202]
-````
+![Architecture Diagram](docs/architecture.png)
