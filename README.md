@@ -11,13 +11,64 @@ maintains a SHA-256 hash-chained audit trail for tamper-evident accountability.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
-![Architecture Diagram](docs/architecture.png)
-
-## Architecture
-
+## Architecture Diagram
 ![AegisAI Architecture](docs/architecture.png)
 
-**Layers:**
+### Request Lifecycle
+
+Every request passes through four stages before it either reaches the model 
+or is rejected. Each stage is a single module, so the behavior is easy to 
+audit and easy to extend.
+
+**1. Detect — `app/plugins/`**
+
+The prompt is scanned by independent plugins. Each plugin exposes the same 
+interface: `scan(text) -> list[Finding]`. Plugins don't make decisions — 
+they only report what they found.
+
+- **PII plugin** — regex detectors for EMAIL, SSN, PHONE, and CREDIT_CARD 
+  (validated with the Luhn checksum to avoid false positives).
+- **Injection plugin** — pattern matching for jailbreak attempts, split 
+  into `high` and `medium` severity tiers.
+
+Adding a new detector is two lines: write the plugin, register it in 
+`app/plugins/__init__.py`. Nothing else changes.
+
+**2. Decide — `app/policy_kernel.py`**
+
+The kernel receives findings and returns a `Decision`. It evaluates rules 
+from `policies.yaml` using two principles:
+
+- **Deny-trumps-allow** — any BLOCK rule short-circuits evaluation. If one 
+  plugin finds an SSN and another finds an email, the SSN wins.
+- **First-match-wins** — within the same severity tier, the first matching 
+  rule determines the action.
+
+If no rule matches, the file's `default_action` (usually `allow`) applies. 
+The kernel is pure logic — no I/O, no side effects, fully testable in 
+isolation.
+
+**3. Enforce — `app/enforcement.py` + `app/main.py`**
+
+The gateway acts on the decision:
+
+| Decision | Behavior |
+|---|---|
+| `allow` | Forward to the model unchanged |
+| `redact` | Mask the matched span in-place, then forward |
+| `block` | Return HTTP 403 — the prompt **never** reaches the model |
+| `escalate` | Return HTTP 202 — queued for human review |
+
+The enforcement layer has no knowledge of *why* a decision was made — it 
+just executes. That separation keeps the gateway easy to reason about.
+
+**4. Audit — `app/audit.py`**
+
+Every decision — including blocked ones — is written to a SQLite hash chain 
+before the response is returned. Each row's `chain_hash` is computed as:
+---
+
+### Component Map
 
 | Layer | Responsibility | Code |
 |---|---|---|
