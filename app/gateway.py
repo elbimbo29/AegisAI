@@ -40,8 +40,8 @@ def _mock_response(request: ChatRequest) -> ChatResponse:
 async def forward_to_model(request: ChatRequest) -> ChatResponse:
     """Forward a chat request to the model provider.
 
-    Phase 1: always returns a mock response.
-    Phase 1.5: will call OpenAI when MOCK_MODE is False.
+    This function is only called AFTER enforcement has allowed the request.
+    It has no knowledge of decisions, policies, or audit.
     """
     if MOCK_MODE:
         return _mock_response(request)
