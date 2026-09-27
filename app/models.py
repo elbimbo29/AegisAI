@@ -60,3 +60,22 @@ class Decision(BaseModel):
     policy_name: str | None = None
     reason: str | None = None
     findings: list[Finding] = []
+
+
+# --- Phase 5: Audit records ---
+
+from datetime import datetime
+
+
+class AuditRecord(BaseModel):
+    """A single entry in the tamper-evident audit log."""
+
+    id: int | None = None
+    ts: datetime
+    request_hash: str  # sha256 of the scanned prompt (not the raw prompt)
+    prev_hash: str  # the previous record's chain_hash
+    chain_hash: str  # sha256(prev_hash + this record's canonical payload)
+    decision: ActionType
+    policy_name: str | None = None
+    reason: str | None = None
+    findings_count: int = 0

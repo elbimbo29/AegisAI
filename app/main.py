@@ -3,21 +3,32 @@
 Real-Time AI Ethics · Governance · Audit
 """
 
-from fastapi import FastAPI, HTTPException
+import os
 
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Response
+
+from app import audit
 from app.enforcement import describe_decision, redact_text
 from app.gateway import forward_to_model
 from app.models import ChatRequest, ChatResponse, Finding
 from app.plugins import run_all as run_all_plugins
 from app.policy_kernel import PolicyKernel
 
+load_dotenv()
+
+AUDIT_DB_PATH = os.getenv("AUDIT_DB_PATH", "./data/audit.db")
+
 app = FastAPI(
     title="AegisAI",
     description="Real-time AI governance layer with tamper-evident audit.",
-    version="0.4.0",
+    version="0.5.0",
 )
 
 kernel = PolicyKernel.from_yaml("policies/policies.yaml")
+
+
+# --- Health & introspection ---
 
 
 @app.get("/health")
@@ -32,6 +43,25 @@ async def list_policies() -> list[dict]:
     return [rule.model_dump() for rule in kernel.policy_file.policies]
 
 
+# --- Audit endpoints ---
+
+
+@app.get("/audit")
+async def get_audit(limit: int = 20) -> list[dict]:
+    """Return the most recent audit records (newest first)."""
+    return audit.recent_records(AUDIT_DB_PATH, limit=limit)
+
+
+@app.get("/audit/verify")
+async def verify_audit() -> dict:
+    """Verify the audit chain's integrity."""
+    valid, broken_at = audit.verify_chain(AUDIT_DB_PATH)
+    return {"valid": valid, "broken_at": broken_at}
+
+
+# --- Main endpoint ---
+
+
 @app.post("/v1/chat/completions", response_model=ChatResponse)
 async def chat_completions(
     request: ChatRequest,
@@ -39,14 +69,15 @@ async def chat_completions(
 ) -> ChatResponse:
     """OpenAI-compatible chat completions endpoint.
 
-    Phase 4 flow:
+    Phase 5 flow:
       1. Scan input for findings
       2. Evaluate findings -> decision
-      3. Enforce decision (allow / redact / block / escalate)
-      4. Forward to model (only if allow or redact)
-      5. Attach decision metadata to response headers
+      3. Write audit record (every decision, including blocks)
+      4. Enforce (allow / redact / block / escalate)
+      5. Forward to model (only if allow or redact)
+      6. Attach decision metadata to response headers
     """
-    # 1. Scan the last user message.
+    # 1. Scan.
     last_user_text = next(
         (m.content for m in reversed(request.messages) if m.role == "user"),
         "",
@@ -56,11 +87,13 @@ async def chat_completions(
     # 2. Decide.
     decision = kernel.evaluate(findings)
 
-    # 3. Enforce.
+    # 3. Audit — always, before enforcement, so even blocked requests are logged.
+    record = audit.write_record(AUDIT_DB_PATH, last_user_text, decision)
+
+    # 4. Enforce.
     if decision.action == "block":
         print(
-            f"[AegisAI] BLOCK -> {describe_decision(decision)} "
-            f"(findings={len(findings)})"
+            f"[AegisAI] BLOCK -> {describe_decision(decision)} (audit_id={record.id})"
         )
         raise HTTPException(
             status_code=403,
@@ -69,17 +102,22 @@ async def chat_completions(
                 "policy": decision.policy_name,
                 "reason": decision.reason,
                 "decision": decision.action,
+                "audit_id": record.id,
             },
         )
 
     if decision.action == "escalate":
-        print(f"[AegisAI] ESCALATE -> {describe_decision(decision)}")
+        print(
+            f"[AegisAI] ESCALATE -> {describe_decision(decision)} "
+            f"(audit_id={record.id})"
+        )
         raise HTTPException(
             status_code=202,
             detail={
                 "error": "escalated_for_review",
                 "policy": decision.policy_name,
                 "reason": decision.reason,
+                "audit_id": record.id,
             },
         )
 
@@ -90,19 +128,19 @@ async def chat_completions(
                 request.messages[i].content = redacted
                 break
         print(
-            f"[AegisAI] REDACT -> {describe_decision(decision)} "
-            f"(findings={len(findings)})"
+            f"[AegisAI] REDACT -> {describe_decision(decision)} (audit_id={record.id})"
         )
 
     if decision.action == "allow":
-        print(f"[AegisAI] ALLOW (findings={len(findings)})")
+        print(f"[AegisAI] ALLOW (audit_id={record.id})")
 
-    # 4. Forward.
+    # 5. Forward.
     model_response = await forward_to_model(request)
 
-    # 5. Attach decision metadata to response headers.
+    # 6. Headers.
     response.headers["x-aegis-decision"] = decision.action
     response.headers["x-aegis-policy"] = decision.policy_name or ""
     response.headers["x-aegis-findings"] = str(len(findings))
+    response.headers["x-aegis-audit-id"] = str(record.id)
 
     return model_response

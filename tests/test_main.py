@@ -57,3 +57,22 @@ def test_medium_injection_escalated():
     assert response.status_code == 202
     detail = response.json()["detail"]
     assert detail["error"] == "escalated_for_review"
+
+
+def test_audit_endpoint_records_requests():
+    # Clear or use a fresh DB per test run? For simplicity, just assert
+    # that requests are being recorded.
+    _post("hello audit")
+    response = client.get("/audit?limit=5")
+    assert response.status_code == 200
+    records = response.json()
+    assert len(records) >= 1
+    assert records[0]["decision"] in {"allow", "redact", "block", "escalate"}
+
+
+def test_audit_verify_endpoint_is_valid():
+    response = client.get("/audit/verify")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["valid"] is True
+    assert body["broken_at"] is None
