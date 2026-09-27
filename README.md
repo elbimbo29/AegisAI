@@ -12,6 +12,21 @@ maintains a SHA-256 hash-chained audit trail for tamper-evident accountability.
 
 ---
 ![Architecture Diagram](docs/architecture.png)
+
+## Architecture
+
+![AegisAI Architecture](docs/architecture.png)
+
+**Layers:**
+
+| Layer | Responsibility | Code |
+|---|---|---|
+| Gateway | HTTP surface, request routing, enforcement | `app/main.py`, `app/gateway.py` |
+| Detection | PII, injection, secret scanners | `app/plugins/` |
+| Policy Kernel | YAML evaluation, decision logic | `app/policy_kernel.py` |
+| Enforcement | Redaction, blocking, escalation | `app/enforcement.py` |
+| Audit | Hash-chained evidence | `app/audit.py` |
+| Observability | Redis metrics + Grafana | `app/metrics.py` |
 ---
 
 ## The Three Pillars
