@@ -135,3 +135,83 @@ curl -X POST localhost:8000/v1/chat/completions \
 ```
 
 > **Windows users:** Replace `curl` with `Invoke-RestMethod` or use `curl.exe` for the real curl binary.
+
+
+---
+
+## Policy-as-Code
+
+Policies are declarative YAML — reviewable by governance teams, versionable like code, enforceable at runtime. No Python changes needed to update a rule.
+
+```yaml
+policies:
+  - name: block_ssn
+    description: Social Security Numbers must never leave the network.
+    match:
+      plugin: pii
+      entities: [SSN]
+    action: block
+
+  - name: redact_email
+    description: Email addresses are masked before reaching the model.
+    match:
+      plugin: pii
+      entities: [EMAIL]
+    action: redact
+```
+
+**Evaluation rules:**
+
+1. **Deny-trumps-allow** — a BLOCK short-circuits all other rules.
+2. **First-match-wins** — within the same tier, the first match decides.
+3. **Default action** — used when no rule matches.
+
+---
+
+## Tamper-Evident Audit
+
+Every decision is recorded in a hash chain:
+
+```text
+row_1.chain_hash = sha256(genesis + row_1.payload)
+row_2.chain_hash = sha256(row_1.chain_hash + row_2.payload)
+row_3.chain_hash = sha256(row_2.chain_hash + row_3.payload)
+...
+```
+
+Two checks per row during verification:
+
+1. `prev_hash` matches the previous row's `chain_hash` (detects deleted or inserted rows).
+2. Recomputed `chain_hash` matches the stored value (detects edited rows).
+
+**Prove it yourself:**
+
+```bash
+# Verify chain integrity
+curl localhost:8000/audit/verify
+# → {"valid": true, "broken_at": null}
+
+# Tamper with a record
+sqlite3 data/audit.db "UPDATE audit SET decision='allow' WHERE id=1;"
+
+# Verify again
+curl localhost:8000/audit/verify
+# → {"valid": false, "broken_at": 1}
+```
+
+---
+
+## Future Work
+
+AegisAI is intentionally scoped for a single developer. The enterprise version would add:
+
+- **Policy hot-reload** — watch `policies.yaml` and reload without restart
+- **Human-in-the-loop queue** — real Slack / email integration for `escalate`
+- **ML-based injection detection** — swap the regex plugin for a small ONNX classifier
+- **Multi-tenant policies** — different rules per team or customer
+- **Merkle-root anchoring** — batch records and publish a public checkpoint
+- **OpenTelemetry traces** — end-to-end tracing across services
+- **EU AI Act mapper** — auto-generate compliance reports from the audit log
+- **Docker + Compose** — one-command local deployment
+
+Each is a natural extension of the current architecture — the interfaces are already in place.
