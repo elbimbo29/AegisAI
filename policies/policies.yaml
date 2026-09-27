@@ -1,0 +1,51 @@
+# AegisAI policy file
+# Ethics encoded as enforceable, versioned policy-as-code.
+#
+# Evaluated by app/policy_kernel.py using:
+#   - deny-trumps-allow    : any BLOCK rule overrides all others
+#   - first-match-wins     : within the same severity, the first match decides
+#
+# Actions:
+#   allow    -> forward as-is
+#   redact   -> mask the matched span, then forward
+#   block    -> reject before reaching the model
+#   escalate -> suspend for human review (Phase 4 will queue it)
+
+version: 1
+default_action: allow
+
+policies:
+  - name: block_ssn
+    description: Social Security Numbers must never leave the network.
+    match:
+      plugin: pii
+      entities: [SSN]
+    action: block
+
+  - name: redact_credit_card
+    description: Credit card numbers are masked before reaching the model.
+    match:
+      plugin: pii
+      entities: [CREDIT_CARD]
+    action: redact
+
+  - name: redact_email
+    description: Email addresses are masked before reaching the model.
+    match:
+      plugin: pii
+      entities: [EMAIL]
+    action: redact
+
+  - name: block_jailbreak_high
+    description: High-severity prompt injection attempts are blocked.
+    match:
+      plugin: injection
+      severity: high
+    action: block
+
+  - name: escalate_jailbreak_medium
+    description: Medium-severity injection attempts are queued for review.
+    match:
+      plugin: injection
+      severity: medium
+    action: escalate
