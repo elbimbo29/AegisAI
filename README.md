@@ -22,4 +22,7 @@ Detection (`app/plugins/`) feeds findings to both Ethics and Governance. The ker
 
 ---
 ## Architecture
-![Architecture Diagram](docs/architecture.png)
+
+![AegisAI request pipeline: Client → Gateway → Detect → Decide → Audit → Enforce → LLM or 403/202](docs/architecture.png)
+
+AegisAI intercepts every request, evaluates it against policy, and logs the decision immutably.
