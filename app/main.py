@@ -6,7 +6,8 @@ Real-Time AI Ethics · Governance · Audit
 from fastapi import FastAPI
 
 from app.gateway import forward_to_model
-from app.models import ChatRequest, ChatResponse, Decision, Finding
+from app.models import ChatRequest, ChatResponse
+from app.plugins import run_all as run_all_plugins
 from app.policy_kernel import PolicyKernel
 
 app = FastAPI(
@@ -36,14 +37,24 @@ async def list_policies() -> list[dict]:
 async def chat_completions(request: ChatRequest) -> ChatResponse:
     """OpenAI-compatible chat completions endpoint.
 
-    Phase 2: evaluates an empty findings list (always 'allow' for now).
-    Phase 3: real scanners produce findings.
-    Phase 4: enforcement acts on the decision.
+    Phase 3: scans the last user message and feeds findings to the kernel.
+    Phase 4: will branch on decision.action to enforce.
     """
-    # Placeholder: Phase 3 will replace this with real plugin scans.
-    findings: list[Finding] = []
-    decision: Decision = kernel.evaluate(findings)
+    # Scan only the last user message for now.
+    # Phase 4 will scan all messages + the model's response.
+    last_user_text = next(
+        (m.content for m in reversed(request.messages) if m.role == "user"),
+        "",
+    )
+
+    findings = run_all_plugins(last_user_text)
+    decision = kernel.evaluate(findings)
 
     # Phase 4 will branch on decision.action here.
-    # For now, just forward as before.
+    # For now, forward regardless — but log what we saw.
+    print(
+        f"[AegisAI] findings={len(findings)} "
+        f"action={decision.action} policy={decision.policy_name}"
+    )
+
     return await forward_to_model(request)
