@@ -4,11 +4,12 @@ Real-Time AI Ethics · Governance · Audit
 """
 
 import os
+import time
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Response
 
-from app import audit
+from app import audit, metrics
 from app.enforcement import describe_decision, redact_text
 from app.gateway import forward_to_model
 from app.models import ChatRequest, ChatResponse, Finding
@@ -22,7 +23,7 @@ AUDIT_DB_PATH = os.getenv("AUDIT_DB_PATH", "./data/audit.db")
 app = FastAPI(
     title="AegisAI",
     description="Real-time AI governance layer with tamper-evident audit.",
-    version="0.5.0",
+    version="0.6.0",
 )
 
 kernel = PolicyKernel.from_yaml("policies/policies.yaml")
@@ -34,13 +35,23 @@ kernel = PolicyKernel.from_yaml("policies/policies.yaml")
 @app.get("/health")
 async def health() -> dict[str, str]:
     """Liveness probe."""
-    return {"status": "ok", "service": "aegisai"}
+    return {
+        "status": "ok",
+        "service": "aegisai",
+        "version": app.version,
+    }
 
 
 @app.get("/policies")
 async def list_policies() -> list[dict]:
     """Inspect the loaded policy set."""
     return [rule.model_dump() for rule in kernel.policy_file.policies]
+
+
+@app.get("/metrics")
+async def get_metrics() -> dict:
+    """Snapshot of AegisAI metrics. Grafana can poll this or read Redis directly."""
+    return metrics.snapshot()
 
 
 # --- Audit endpoints ---
@@ -69,13 +80,14 @@ async def chat_completions(
 ) -> ChatResponse:
     """OpenAI-compatible chat completions endpoint.
 
-    Phase 5 flow:
+    Phase 6 flow:
       1. Scan input for findings
-      2. Evaluate findings -> decision
+      2. Evaluate findings -> decision (timed)
       3. Write audit record (every decision, including blocks)
-      4. Enforce (allow / redact / block / escalate)
-      5. Forward to model (only if allow or redact)
-      6. Attach decision metadata to response headers
+      4. Record metrics
+      5. Enforce (allow / redact / block / escalate)
+      6. Forward to model (only if allow or redact)
+      7. Attach decision metadata to response headers
     """
     # 1. Scan.
     last_user_text = next(
@@ -84,13 +96,25 @@ async def chat_completions(
     )
     findings: list[Finding] = run_all_plugins(last_user_text)
 
-    # 2. Decide.
+    # 2. Decide (timed).
+    start = time.perf_counter()
     decision = kernel.evaluate(findings)
+    latency_ms = (time.perf_counter() - start) * 1000.0
 
     # 3. Audit — always, before enforcement, so even blocked requests are logged.
     record = audit.write_record(AUDIT_DB_PATH, last_user_text, decision)
 
-    # 4. Enforce.
+    # 4. Metrics — best-effort.
+    metrics.record_decision(
+        action=decision.action,
+        policy_name=decision.policy_name,
+        findings_count=len(findings),
+    )
+    for finding in findings:
+        metrics.record_finding(finding.plugin)
+    metrics.record_latency(latency_ms)
+
+    # 5. Enforce.
     if decision.action == "block":
         print(
             f"[AegisAI] BLOCK -> {describe_decision(decision)} (audit_id={record.id})"
@@ -134,10 +158,10 @@ async def chat_completions(
     if decision.action == "allow":
         print(f"[AegisAI] ALLOW (audit_id={record.id})")
 
-    # 5. Forward.
+    # 6. Forward.
     model_response = await forward_to_model(request)
 
-    # 6. Headers.
+    # 7. Headers.
     response.headers["x-aegis-decision"] = decision.action
     response.headers["x-aegis-policy"] = decision.policy_name or ""
     response.headers["x-aegis-findings"] = str(len(findings))
