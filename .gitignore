@@ -1,0 +1,25 @@
+# Virtual environment
+.venv/
+venv/
+
+# Environment files
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Data
+data/*.db
+data/*.sqlite
+
+# VSCode
+.vscode/*.log
+.vscode/settings.json   # optional — remove this line if you want to share VSCode config
+
+# OS
+.DS_Store
+Thumbs.db
