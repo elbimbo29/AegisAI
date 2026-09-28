@@ -278,3 +278,10 @@ AegisAI is intentionally scoped for a single developer. The enterprise version w
 - **Docker + Compose** — one-command local deployment
 
 Each is a natural extension of the current architecture — the interfaces are already in place.
+
+---
+
+
+## License
+
+MIT — see [LICENSE](LICENSE) for details.
