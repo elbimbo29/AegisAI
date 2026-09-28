@@ -83,6 +83,50 @@ Grafana reads these counters to visualize governance activity in real time. Metr
 
 ---
 
+
+
+
+## Demo
+
+AegisAI enforces AI ethics in real time. Below are four tests that prove each 
+layer of the pipeline is working — detection, decision, audit, and enforcement.
+
+### ⚡ Ethics + 🛡️ Governance — Redaction
+
+[definition paragraph]
+
+**Server log** — the gateway records the decision:
+
+![Server log for redaction test](docs/test-1-server.png)
+
+**Client response** — the model only sees the masked prompt:
+
+![Client response for redaction test](docs/test-1-client.png)
+
+### 🛡️ Governance — Blocking
+
+[definition paragraph]
+
+...
+
+### 🔐 Audit — Chain Integrity
+
+[definition paragraph]
+
+...
+
+### ⚡🛡️🔐 All Three Pillars — Full Pipeline
+
+[definition paragraph]
+
+...
+
+
+
+
+
+---
+
 ## Quickstart
 
 ### 1. Clone and set up
