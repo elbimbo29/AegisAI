@@ -83,46 +83,65 @@ Grafana reads these counters to visualize governance activity in real time. Metr
 
 ---
 
+## Testing Screenshots/Demo
 
-
-
-## Demo
-
-AegisAI enforces AI ethics in real time. Below are four tests that prove each 
-layer of the pipeline is working — detection, decision, audit, and enforcement.
+AegisAI enforces AI ethics in real time. The four tests below prove each layer of the pipeline — detection, decision, audit, and enforcement — with real terminal captures.
 
 ### ⚡ Ethics + 🛡️ Governance — Redaction
 
-[definition paragraph]
+A prompt containing an email triggers the `redact_email` policy from `policies.yaml` (Ethics). The gateway masks the email inline before the model sees it (Governance). The model never receives the original address.
 
 **Server log** — the gateway records the decision:
 
-![Server log for redaction test](docs/test-1-server.png)
+![Server log showing REDACT decision for redact_email policy](docs/test-1a-redact-server.png)
 
 **Client response** — the model only sees the masked prompt:
 
-![Client response for redaction test](docs/test-1-client.png)
+![Client response showing EMAIL_REDACTED instead of the original email](docs/test-1b-redact-client.png)
 
 ### 🛡️ Governance — Blocking
 
-[definition paragraph]
+A jailbreak attempt ("ignore previous instructions...") matches the `block_jailbreak_high` policy. The gateway returns HTTP 403 and the prompt never reaches the model. This is the enforcement guarantee: no block decision can accidentally be forwarded.
 
-...
+**Server log** — the block decision with audit ID:
+
+![Server log showing BLOCK decision for block_jailbreak_high policy](docs/test-2a-block-server.png)
+
+**Client response** — structured 403 with policy and audit reference:
+
+![Client response showing HTTP 403 blocked_by_aegisai with audit ID](docs/test-2b-block-client.png)
 
 ### 🔐 Audit — Chain Integrity
 
-[definition paragraph]
+Every decision is written to a SHA-256 hash chain. Each record's `chain_hash` is computed from the previous record's hash plus its own payload — so editing, deleting, or inserting any record breaks the chain and is detectable.
 
-...
+**The audit chain** — recent records showing `prev_hash` linkage:
+
+![Audit records showing hash chain with prev_hash and chain_hash fields](docs/test-3a-audit-records.png)
+
+**Chain verification** — `/audit/verify` recomputes every hash and confirms integrity:
+
+![Audit verify endpoint returning valid true and broken_at null](docs/test-3b-audit-verify.png)
 
 ### ⚡🛡️🔐 All Three Pillars — Full Pipeline
 
-[definition paragraph]
+All four governance decisions in one run. **ALLOW** forwards a clean prompt. **REDACT** masks PII inline. **BLOCK** rejects a jailbreak with HTTP 403. **ESCALATE** queues a medium-severity injection for human review with HTTP 202. Every decision is recorded in the audit chain.
 
-...
+**Client view** — the four decisions, color-coded:
 
+![Client view showing all four decisions allow redact block escalate](docs/test-4a-all-decisions-client.png)
 
+**Server log** — the corresponding audit trail:
 
+![Server log showing the four AegisAI decision lines in sequence](docs/test-4b-all-decisions-server.png)
+
+### What This Proves
+
+| Pillar | Evidence |
+|---|---|
+| ⚡ **Ethics** | The rules in `policies.yaml` fire correctly — `redact_email`, `block_jailbreak_high`, `escalate_jailbreak_medium` |
+| 🛡️ **Governance** | The gateway enforces inline — masking, blocking, escalating, all before the model is reached |
+| 🔐 **Audit** | Every decision is recorded in a tamper-evident hash chain that verifies as `valid: true` |
 
 
 ---
